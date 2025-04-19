@@ -4,6 +4,7 @@ from collections import defaultdict
 from statistics import mean, stdev
 from scipy import stats
 from collections import Counter
+import time
 
 class GearProblem:
     def __init__(self, target_ratio, min_teeth=12, max_teeth=60):
@@ -23,6 +24,7 @@ class ACO:
         self.problem = problem
         self.num_ants = num_ants
         self.iterations = iterations
+        self.error_threshold = 1e-6
         self.evaporation = evaporation
         self.alpha = alpha
         self.beta = beta
@@ -53,9 +55,11 @@ class ACO:
     def run(self):
         best_error = float('inf')
         best_solution = None
-        convergence = []  # Almacena el mejor error de cada iteración
+        convergence = []
+        iterations_to_solution = 0
         
-        for _ in range(self.iterations):
+        for iteration in range(self.iterations):
+            iterations_to_solution += 1
             solutions = []
             for __ in range(self.num_ants):
                 indices = [self.select_value(var) for var in ['A', 'B', 'D', 'F']]
@@ -73,7 +77,10 @@ class ACO:
             convergence.append(best_error)
             self.update_pheromones(solutions)
             
-        return best_solution, best_error, convergence
+            if best_error < self.error_threshold:
+                break
+        
+        return best_solution, best_error, convergence, iterations_to_solution
     
     def update_pheromones(self, solutions):
         for var in self.pheromones:
@@ -89,35 +96,39 @@ def multiple_runs(num_runs=10, **aco_params):
     problem = GearProblem(1/6.931)
     all_convergence = []
     solutions = defaultdict(list)
+    run_times = []
     
     for run in range(num_runs):
+        start_time = time.time()
         aco = ACO(problem, **aco_params)
-        solution, error, convergence = aco.run()
+        solution, error, convergence, iterations = aco.run()
+        end_time = time.time()
+        
         solutions[tuple(solution)].append(error)
         all_convergence.append(convergence)
-        print(f"Ejecución {run+1}/{num_runs} completada - Error: {error:.2e}")
+        run_time = end_time - start_time
+        run_times.append(run_time)
+        print(f"Ejecución {run+1}/{num_runs} completada - Error: {error:.2e} - Tiempo: {run_time:.2f} segundos - Iteraciones: {iterations}")
 
-    # Procesamiento de convergencia
-    avg_convergence = np.mean(all_convergence, axis=0)
-    std_convergence = np.std(all_convergence, axis=0)
+    max_length = max(len(conv) for conv in all_convergence)
+    padded_convergence = [np.pad(conv, (0, max_length - len(conv)), constant_values=np.nan) for conv in all_convergence]
+    avg_convergence = np.nanmean(padded_convergence, axis=0)
+    std_convergence = np.nanstd(padded_convergence, axis=0)
     
-    # Estadísticas de soluciones
     unique_solutions = []
     for sol, errors in solutions.items():
         unique_solutions.append((sol, min(errors)))
     
     unique_solutions.sort(key=lambda x: x[1])
     
+    avg_run_time = mean(run_times)
+    print(f"\nTiempo promedio por ejecución: {avg_run_time:.2f} segundos")
+    
     return unique_solutions, avg_convergence, std_convergence
 
-def plot_convergence(avg_convergence, std_convergence, max_iterations=20):
+def plot_convergence(avg_convergence, std_convergence):
     plt.figure(figsize=(10, 6))
     iterations = np.arange(1, len(avg_convergence) + 1)
-    
-    if max_iterations is not None:
-        iterations = iterations[:max_iterations]
-        avg_convergence = avg_convergence[:max_iterations]
-        std_convergence = std_convergence[:max_iterations]
     
     plt.plot(iterations, avg_convergence, label='Error Promedio', lw=2)
     plt.fill_between(iterations, 
@@ -133,8 +144,7 @@ def plot_convergence(avg_convergence, std_convergence, max_iterations=20):
     plt.grid(True, which="both", ls="--")
     plt.show()
 
-# Parámetros de ejecución
-num_runs = 20
+num_runs = 50
 aco_params = {
     'num_ants': 100,
     'iterations': 200,
@@ -144,40 +154,37 @@ aco_params = {
     'elite': 5
 }
 
-# Ejecutar experimento
 results, avg_conv, std_conv = multiple_runs(num_runs=num_runs, **aco_params)
 
-# Graficar convergencia
-plot_convergence(avg_conv, std_conv, num_runs+10)
+plot_convergence(avg_conv, std_conv)
 
-# Análisis estadístico
 errors = [error for _, error in results]
 solutions = [sol for sol, _ in results]
 
 print("\nAnálisis Estadístico:")
-# Promedio de soluciones y evaluación del error del promedio
 avg_solution = [mean([sol[i] for sol in solutions]) for i in range(4)]
 avg_error = GearProblem(1/6.931).evaluate(avg_solution)
 print(f"- Promedio de soluciones: {avg_solution}")
 print(f"- Error del promedio: {avg_error:.2e}")
 
-# Las cuatro letras que más aparecen juntas
 solution_counts = Counter(tuple(sol) for sol in solutions)
-most_common_solution, _ = solution_counts.most_common(1)[0]
+most_common_solution, count = solution_counts.most_common(1)[0]
 print(f"- Solución más común: {most_common_solution}")
+print(f"- Veces que aparece la solución más común: {count}")
 most_common_solution_error = GearProblem(1/6.931).evaluate(most_common_solution)
 print(f"- Error de la solución más común: {most_common_solution_error:.2e}")
 
-# Moda de cada letra y evaluación de su error
 modes = [stats.mode([sol[i] for sol in solutions], keepdims=True)[0][0] for i in range(4)]
 mode_error = GearProblem(1/6.931).evaluate(modes)
 print(f"- Moda de cada letra: {modes}")
 print(f"- Error de la moda: {mode_error:.2e}")
 
-# Mostrar top 3 soluciones
+avg_std_dev = np.mean(std_conv)
+print(f"- Desviación estándar promedio: {avg_std_dev:.2e}")
+
 print("\nTop 3 Soluciones:")
 for i, (solution, error) in enumerate(results[:3]):
     A, B, D, F = solution
     ratio = (B * D) / (A * F)
     print(f"{i+1}. [A:{A} B:{B} D:{D} F:{F}]")
-    print(f"   Error: {error:.2e} | Relación: {ratio:.6f} (Objetivo: {1/6.931:.6f})\n")
+    print(f"   Error: {error:.2e} | Relación: {ratio:.6f} (Objetivo: {1/6.931:.6f})")
