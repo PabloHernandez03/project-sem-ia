@@ -16,6 +16,8 @@ lower_bound = 12
 upper_bound = 60
 dimension = 4  # porque x1, x2, x3, x4
 
+error_threshold = 1e-6  # Umbral de error
+
 # Función para inicializar posiciones
 def initialize_population():
     return np.random.uniform(lower_bound, upper_bound, (n_crows, dimension))
@@ -63,6 +65,8 @@ def CSA():
                 best_crow = crow
 
         convergence_curve.append(best_score)
+        if best_score <= error_threshold:
+            break
 
     end_time = time.time()
     execution_time = end_time - start_time
@@ -70,7 +74,7 @@ def CSA():
     return best_crow, best_score, convergence_curve, execution_time
 
 # Ejecutamos CSA varias veces para estadísticas
-n_runs = 30
+n_runs = 50
 all_best_scores = []
 all_execution_times = []
 best_solutions = []
@@ -93,12 +97,24 @@ best_run_idx = np.argmin(all_best_scores)
 best_solution = best_solutions[best_run_idx]
 best_objective = all_best_scores[best_run_idx]
 
+solutions_array = np.array(best_solutions)
+avg_solution = np.mean(solutions_array, axis=0)
+
 print("\n--- Resultados CSA ---")
 print(f"Mejor solución encontrada: {best_solution}")
 print(f"Valor de la función objetivo: {best_objective}")
+print(f"Promedio de soluciones: {np.round(avg_solution, 2)}")
 print(f"Promedio de mejores soluciones: {average_best}")
 print(f"Desviación estándar: {std_best}")
 print(f"Tiempo promedio de ejecución: {average_time} segundos")
+
+sorted_indices = np.argsort(all_best_scores)[:3]
+for i, idx in enumerate(sorted_indices):
+    sol = best_solutions[idx]
+    ratio = (sol[2]*sol[1])/(sol[0]*sol[3])
+    print(f"\nTop {i+1}:")
+    print(f"Variables: A={sol[0]}, B={sol[1]}, D={sol[2]}, F={sol[3]}")
+    print(f"Error: {all_best_scores[idx]:.2e} | Relación: {ratio:.6f}")
 
 # Verificación de restricciones
 print("\nVerificación de restricciones:")
